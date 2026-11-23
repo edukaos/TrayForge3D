@@ -41,7 +41,7 @@ class ModelGenerator {
     // Safe clamp for fillet
     const maxFillet = Math.min(fillet, Math.min(width, depth) / 4);
     const rOuter = Math.max(0.1, maxFillet);
-    const rInner = Math.max(0.1, rOuter - wallThickness);
+    const rInner = Math.max(0.0, rOuter - wallThickness);
     const innerW = width - 2 * wallThickness;
     const innerD = depth - 2 * wallThickness;
 
@@ -68,7 +68,7 @@ class ModelGenerator {
     if (stackable && footH > 0) {
       const footW = width - 2 * (halfT + clearance);
       const footD = depth - 2 * (halfT + clearance);
-      const footFillet = Math.max(0.1, rOuter - (halfT + clearance));
+      const footFillet = Math.max(0.0, rOuter - (halfT + clearance));
 
       const footShape = this.createRoundedRectShape(footW, footD, footFillet);
       footShape.holes.push(this.createRoundedRectPath(innerW, innerD, rInner));
@@ -100,10 +100,31 @@ class ModelGenerator {
     // 3. MAIN WALLS & FILLETED COMPARTMENTS (Full thickness T)
     // -------------------------------------------------------------
     const makeCellHole = (cell) => {
+      const isLeft = Math.abs(cell.x) < 0.05;
+      const isRight = Math.abs((cell.x + cell.w) - innerW) < 0.05;
+      const isTop = Math.abs(cell.y) < 0.05;
+      const isBottom = Math.abs((cell.y + cell.h) - innerD) < 0.05;
+
+      // Single cavity tray: perfectly concentric with outer perimeter
+      if (isLeft && isRight && isTop && isBottom) {
+        return this.createRoundedRectPath(innerW, innerD, rInner);
+      }
+
+      // Multi-compartment: outer corners match rInner, interior dividers use internal fillet
       const cx = cell.x + cell.w / 2 - innerW / 2;
       const cy = -(cell.y + cell.h / 2 - innerD / 2);
-      const r = Math.max(0.1, Math.min(fillet, Math.min(cell.w, cell.h) / 3));
-      return this.createPositionedRoundedRectPath(cx, cy, cell.w, cell.h, r);
+      const x0 = cx - cell.w / 2;
+      const x1 = cx + cell.w / 2;
+      const y0 = cy - cell.h / 2;
+      const y1 = cy + cell.h / 2;
+
+      const rInternal = Math.max(0, Math.min(fillet, Math.min(cell.w, cell.h) / 3, 2.0));
+      const rBL = (isLeft && isBottom) ? rInner : rInternal;
+      const rBR = (isRight && isBottom) ? rInner : rInternal;
+      const rTR = (isRight && isTop) ? rInner : rInternal;
+      const rTL = (isLeft && isTop) ? rInner : rInternal;
+
+      return this.createPositionedRoundedRectPath(x0, x1, y0, y1, rBL, rBR, rTR, rTL);
     };
 
     if (mainWallHeight > 0 && layout && layout.cells && layout.cells.length > 0) {
@@ -154,7 +175,7 @@ class ModelGenerator {
       const topLipShape = outerShape.clone();
       const topLipHoleW = width - 2 * halfT;
       const topLipHoleD = depth - 2 * halfT;
-      const topLipHoleFillet = Math.max(0.1, rOuter - halfT);
+      const topLipHoleFillet = Math.max(0.0, rOuter - halfT);
       topLipShape.holes.push(this.createRoundedRectPath(topLipHoleW, topLipHoleD, topLipHoleFillet));
 
       const topLipGeom = new THREE.ExtrudeGeometry(topLipShape, {
@@ -174,9 +195,11 @@ class ModelGenerator {
       layout.cells.forEach(cell => {
         const cx = cell.x + cell.w / 2 - innerW / 2;
         const cy = -(cell.y + cell.h / 2 - innerD / 2);
-        const cellFillet = Math.max(0.1, Math.min(fillet, Math.min(cell.w, cell.h) / 3));
+        const isLeft = Math.abs(cell.x) < 0.05;
+        const isBottom = Math.abs((cell.y + cell.h) - innerD) < 0.05;
+        const cornerR = (isLeft && isBottom) ? rInner : Math.max(0, Math.min(fillet, Math.min(cell.w, cell.h) / 3, 2.0));
 
-        const spanW = cell.w - 2 * cellFillet;
+        const spanW = cell.w - 2 * cornerR;
         if (spanW > 2) {
           const x1 = cx - spanW / 2;
           const x2 = cx + spanW / 2;
@@ -256,62 +279,113 @@ class ModelGenerator {
     };
   }
 
-  // Helper: Create rounded rectangle THREE.Shape
+  // Helper: Create rounded rectangle THREE.Shape with exact circular arcs (absarc)
   static createRoundedRectShape(w, h, r) {
     const shape = new THREE.Shape();
-    const radius = Math.min(r, Math.min(w, h) / 2);
-    const x = -w / 2;
-    const y = -h / 2;
+    const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+    const x0 = -w / 2;
+    const x1 = w / 2;
+    const y0 = -h / 2;
+    const y1 = h / 2;
 
-    shape.moveTo(x + radius, y);
-    shape.lineTo(x + w - radius, y);
-    shape.quadraticCurveTo(x + w, y, x + w, y + radius);
-    shape.lineTo(x + w, y + h - radius);
-    shape.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-    shape.lineTo(x + radius, y + h);
-    shape.quadraticCurveTo(x, y + h, x, y + h - radius);
-    shape.lineTo(x, y + radius);
-    shape.quadraticCurveTo(x, y, x + radius, y);
+    if (radius <= 0.05) {
+      shape.moveTo(x0, y0);
+      shape.lineTo(x1, y0);
+      shape.lineTo(x1, y1);
+      shape.lineTo(x0, y1);
+      shape.closePath();
+      return shape;
+    }
+
+    shape.moveTo(x0 + radius, y0);
+    shape.lineTo(x1 - radius, y0);
+    shape.absarc(x1 - radius, y0 + radius, radius, -Math.PI / 2, 0, false);
+    shape.lineTo(x1, y1 - radius);
+    shape.absarc(x1 - radius, y1 - radius, radius, 0, Math.PI / 2, false);
+    shape.lineTo(x0 + radius, y1);
+    shape.absarc(x0 + radius, y1 - radius, radius, Math.PI / 2, Math.PI, false);
+    shape.lineTo(x0, y0 + radius);
+    shape.absarc(x0 + radius, y0 + radius, radius, Math.PI, Math.PI * 1.5, false);
+    shape.closePath();
 
     return shape;
   }
 
-  // Helper: Create rounded rectangle THREE.Path (for holes)
+  // Helper: Create rounded rectangle THREE.Path (for holes) with exact circular arcs (absarc)
   static createRoundedRectPath(w, h, r) {
     const path = new THREE.Path();
-    const radius = Math.min(r, Math.min(w, h) / 2);
-    const x = -w / 2;
-    const y = -h / 2;
+    const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+    const x0 = -w / 2;
+    const x1 = w / 2;
+    const y0 = -h / 2;
+    const y1 = h / 2;
 
-    path.moveTo(x + radius, y);
-    path.lineTo(x + w - radius, y);
-    path.quadraticCurveTo(x + w, y, x + w, y + radius);
-    path.lineTo(x + w, y + h - radius);
-    path.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-    path.lineTo(x + radius, y + h);
-    path.quadraticCurveTo(x, y + h, x, y + h - radius);
-    path.lineTo(x, y + radius);
-    path.quadraticCurveTo(x, y, x + radius, y);
+    if (radius <= 0.05) {
+      path.moveTo(x0, y0);
+      path.lineTo(x1, y0);
+      path.lineTo(x1, y1);
+      path.lineTo(x0, y1);
+      path.closePath();
+      return path;
+    }
+
+    path.moveTo(x0 + radius, y0);
+    path.lineTo(x1 - radius, y0);
+    path.absarc(x1 - radius, y0 + radius, radius, -Math.PI / 2, 0, false);
+    path.lineTo(x1, y1 - radius);
+    path.absarc(x1 - radius, y1 - radius, radius, 0, Math.PI / 2, false);
+    path.lineTo(x0 + radius, y1);
+    path.absarc(x0 + radius, y1 - radius, radius, Math.PI / 2, Math.PI, false);
+    path.lineTo(x0, y0 + radius);
+    path.absarc(x0 + radius, y0 + radius, radius, Math.PI, Math.PI * 1.5, false);
+    path.closePath();
+
     return path;
   }
 
-  // Helper: Create positioned rounded rectangle THREE.Path (for individual compartment holes)
-  static createPositionedRoundedRectPath(cx, cy, w, h, r) {
+  // Helper: Create positioned rounded rectangle THREE.Path with independent corner radii (for individual compartment holes)
+  static createPositionedRoundedRectPath(x0, x1, y0, y1, rBL = 0, rBR = 0, rTR = 0, rTL = 0) {
     const path = new THREE.Path();
-    const radius = Math.max(0.1, Math.min(r, Math.min(w, h) / 2));
-    const x = cx - w / 2;
-    const y = cy - h / 2;
+    const maxR = Math.min((x1 - x0) / 2, (y1 - y0) / 2);
+    const bl = Math.min(Math.max(0, rBL), maxR);
+    const br = Math.min(Math.max(0, rBR), maxR);
+    const tr = Math.min(Math.max(0, rTR), maxR);
+    const tl = Math.min(Math.max(0, rTL), maxR);
 
-    path.moveTo(x + radius, y);
-    path.lineTo(x + w - radius, y);
-    path.quadraticCurveTo(x + w, y, x + w, y + radius);
-    path.lineTo(x + w, y + h - radius);
-    path.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-    path.lineTo(x + radius, y + h);
-    path.quadraticCurveTo(x, y + h, x, y + h - radius);
-    path.lineTo(x, y + radius);
-    path.quadraticCurveTo(x, y, x + radius, y);
+    // Bottom edge to bottom-right corner
+    path.moveTo(x0 + bl, y0);
+    path.lineTo(x1 - br, y0);
+    if (br > 0.05) {
+      path.absarc(x1 - br, y0 + br, br, -Math.PI / 2, 0, false);
+    } else {
+      path.lineTo(x1, y0);
+    }
 
+    // Right edge to top-right corner
+    path.lineTo(x1, y1 - tr);
+    if (tr > 0.05) {
+      path.absarc(x1 - tr, y1 - tr, tr, 0, Math.PI / 2, false);
+    } else {
+      path.lineTo(x1, y1);
+    }
+
+    // Top edge to top-left corner
+    path.lineTo(x0 + tl, y1);
+    if (tl > 0.05) {
+      path.absarc(x0 + tl, y1 - tl, tl, Math.PI / 2, Math.PI, false);
+    } else {
+      path.lineTo(x0, y1);
+    }
+
+    // Left edge to bottom-left corner
+    path.lineTo(x0, y0 + bl);
+    if (bl > 0.05) {
+      path.absarc(x0 + bl, y0 + bl, bl, Math.PI, Math.PI * 1.5, false);
+    } else {
+      path.lineTo(x0, y0);
+    }
+
+    path.closePath();
     return path;
   }
 
