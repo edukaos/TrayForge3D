@@ -128,7 +128,8 @@ class ModelGenerator {
     };
 
     if (mainWallHeight > 0 && layout && layout.cells && layout.cells.length > 0) {
-      if (actualPartitionH < mainWallHeight - 0.5) {
+      const hasDividers = layout.cells.length > 1;
+      if (hasDividers && actualPartitionH < mainWallHeight - 0.5) {
         // Lower portion: outer wall + dividers
         const lowerShape = outerShape.clone();
         layout.cells.forEach(cell => lowerShape.holes.push(makeCellHole(cell)));
