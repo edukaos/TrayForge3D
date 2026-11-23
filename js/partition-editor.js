@@ -198,25 +198,10 @@ class PartitionEditor {
   }
 
   handleMouseDown(pos) {
-    // 0. Check if clicking an interactive dimension badge
-    for (const b of this.dimBadges) {
-      if (pos.x >= b.x && pos.y >= b.y && pos.x <= b.x + b.w && pos.y <= b.y + b.h) {
-        const axisLabel = b.dimension === 'width' ? 'Ancho Interior útil (X)' : 'Largo/Alto Interior útil (Y)';
-        const valStr = prompt(`Ingresa el nuevo ${axisLabel} en mm (luz libre para objetos):`, b.val.toFixed(1));
-        if (valStr !== null) {
-          const parsed = parseFloat(valStr);
-          if (!isNaN(parsed) && parsed > 0) {
-            this.state.setCellDimension(b.cellId, b.dimension, parsed);
-          }
-        }
-        return;
-      }
-    }
-
-    // 1. Check if clicking an action button (+ or trash)
+    // 1. FIRST PRIORITY: Action buttons (+ or trash) ALWAYS take precedence
     for (const btn of this.actionButtons) {
       const dist = Math.hypot(pos.x - btn.x, pos.y - btn.y);
-      if (dist <= btn.radius + 4) {
+      if (dist <= btn.radius + 6) {
         if (btn.type === 'split_v') {
           this.state.splitCompartment(btn.cellId, 'v');
         } else if (btn.type === 'split_h') {
@@ -228,7 +213,32 @@ class PartitionEditor {
       }
     }
 
-    // 2. Check if starting divider drag or selection
+    // 2. SECOND PRIORITY: Check if clicking an interactive dimension badge
+    for (const b of this.dimBadges) {
+      if (pos.x >= b.x && pos.y >= b.y && pos.x <= b.x + b.w && pos.y <= b.y + b.h) {
+        if (b.dimension === 'both') {
+          const wStr = prompt('Ingresa el nuevo Ancho Interior útil (X) en mm (luz libre):', b.val.w.toFixed(1));
+          if (wStr !== null) {
+            const parsedW = parseFloat(wStr);
+            if (!isNaN(parsedW) && parsedW > 0) {
+              this.state.setCellDimension(b.cellId, 'width', parsedW);
+            }
+          }
+        } else {
+          const axisLabel = b.dimension === 'width' ? 'Ancho Interior útil (X)' : 'Largo/Alto Interior útil (Y)';
+          const valStr = prompt(`Ingresa el nuevo ${axisLabel} en mm (luz libre para objetos):`, b.val.toFixed(1));
+          if (valStr !== null) {
+            const parsed = parseFloat(valStr);
+            if (!isNaN(parsed) && parsed > 0) {
+              this.state.setCellDimension(b.cellId, b.dimension, parsed);
+            }
+          }
+        }
+        return;
+      }
+    }
+
+    // 3. Check if starting divider drag or selection
     if (this.hoveredDivider) {
       this.draggingDivider = this.hoveredDivider;
       this.selectedDivider = this.hoveredDivider;
@@ -459,27 +469,37 @@ class PartitionEditor {
   // Draw dimension indicators & action buttons for active compartment
   renderCellControls(cell, cx, cy, cw, ch) {
     const { ctx } = this;
+    const btnRadius = Math.max(9, Math.min(12, Math.min(cw, ch) / 4.5));
 
-    // Dimension badges (Bento3D style: blue pill tags with arrows)
-    this.drawDimBadge(cx + cw / 2, cy - 2, `↔ Int: ${cell.w.toFixed(1)} mm`, 'h', '#2563eb', 'width', cell.id, cell.w);
-    this.drawDimBadge(cx - 2, cy + ch / 2, `↕ Int: ${cell.h.toFixed(1)} mm`, 'v', '#2563eb', 'height', cell.id, cell.h);
+    // Dimension badges placed strictly INSIDE the cell to prevent overlapping with neighbors, borders or dividers:
+    if (cw >= 130 && ch >= 75) {
+      // Spacious cell: separate width badge (top) and height badge (left)
+      this.drawDimBadge(cx + cw / 2, cy + 5, `↔ Int: ${cell.w.toFixed(1)} mm`, 'inside_top', '#2563eb', 'width', cell.id, cell.w);
+      this.drawDimBadge(cx + 6, cy + ch / 2, `↕ Int: ${cell.h.toFixed(1)} mm`, 'inside_left', '#2563eb', 'height', cell.id, cell.h);
+    } else if (cw >= 75 && ch >= 45) {
+      // Compact cell: single unified badge centered at top inside
+      this.drawDimBadge(cx + cw / 2, cy + 4, `↔ ${cell.w.toFixed(0)} · ↕ ${cell.h.toFixed(0)} mm`, 'inside_top', '#2563eb', 'both', cell.id, { w: cell.w, h: cell.h });
+    }
+    // Note: If cell is very small (<75px wide or <45px high), we omit the badge inside the canvas to keep
+    // the + and trash buttons unobstructed. The sidebar already displays and edits the exact mm.
 
-    // Action buttons inside the cell:
-    // 1. Split vertically button (+) on right border
-    const btnV_x = cx + cw;
+    // Action buttons positioned safely INSIDE the cell:
+    // 1. Split vertically (+) inside right edge
+    const btnV_x = cx + cw - btnRadius - 5;
     const btnV_y = cy + ch / 2;
-    this.drawCircleBtn(btnV_x, btnV_y, 11, '+', 'split_v', cell.id);
+    this.drawCircleBtn(btnV_x, btnV_y, btnRadius, '+', 'split_v', cell.id);
 
-    // 2. Split horizontally button (+) on bottom border
+    // 2. Split horizontally (+) inside bottom edge
     const btnH_x = cx + cw / 2;
-    const btnH_y = cy + ch;
-    this.drawCircleBtn(btnH_x, btnH_y, 11, '+', 'split_h', cell.id);
+    const btnH_y = cy + ch - btnRadius - 5;
+    this.drawCircleBtn(btnH_x, btnH_y, btnRadius, '+', 'split_h', cell.id);
 
     // 3. Delete / Merge button (Trash) in center if more than 1 cell
     if (this.state.state.partitionTree.type === 'split') {
       const btnTrash_x = cx + cw / 2;
       const btnTrash_y = cy + ch / 2;
-      this.drawTrashBtn(btnTrash_x, btnTrash_y, 13, cell.id);
+      const trashRadius = Math.max(9, Math.min(13, btnRadius + 1));
+      this.drawTrashBtn(btnTrash_x, btnTrash_y, trashRadius, cell.id);
     }
   }
 
@@ -488,17 +508,20 @@ class PartitionEditor {
     ctx.save();
     ctx.font = '700 11px system-ui, sans-serif';
     const textWidth = ctx.measureText(text).width;
-    const badgeW = textWidth + 18;
-    const badgeH = 20;
+    const badgeW = textWidth + 16;
+    const badgeH = 19;
 
     let bx = x;
     let by = y;
 
-    if (orientation === 'h') {
+    if (orientation === 'inside_top' || orientation === 'h') {
       bx = x - badgeW / 2;
-      by = y - badgeH - 5;
+      by = y;
+    } else if (orientation === 'inside_left' || orientation === 'v') {
+      bx = x;
+      by = y - badgeH / 2;
     } else {
-      bx = x - badgeW - 7;
+      bx = x - badgeW / 2;
       by = y - badgeH / 2;
     }
 
@@ -544,19 +567,30 @@ class PartitionEditor {
     this.actionButtons.push({ type: actionType, x, y, radius, cellId });
 
     ctx.save();
-    ctx.fillStyle = '#1e2025';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 1.5;
+
+    // High visibility blue plus button
+    ctx.fillStyle = '#2563eb';
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // White plus sign
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // White plus sign
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(x - 4.5, y);
-    ctx.lineTo(x + 4.5, y);
-    ctx.moveTo(x, y - 4.5);
-    ctx.lineTo(x, y + 4.5);
+    const s = Math.max(3.5, radius * 0.45);
+    ctx.moveTo(x - s, y);
+    ctx.lineTo(x + s, y);
+    ctx.moveTo(x, y - s);
+    ctx.lineTo(x, y + s);
     ctx.stroke();
     ctx.restore();
   }
@@ -566,23 +600,30 @@ class PartitionEditor {
     this.actionButtons.push({ type: 'delete', x, y, radius, cellId });
 
     ctx.save();
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 1;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 1.5;
+
+    ctx.fillStyle = '#ef4444';
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Draw trash icon
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x - 4, y - 3, 8, 8);
+    // Draw white trash can icon
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.8;
+    const r = Math.max(3.5, radius * 0.45);
+    ctx.strokeRect(x - r + 1, y - r + 2, (r - 1) * 2, r * 2 - 1);
     ctx.beginPath();
-    ctx.moveTo(x - 6, y - 3);
-    ctx.lineTo(x + 6, y - 3);
-    ctx.moveTo(x - 2, y - 5);
-    ctx.lineTo(x + 2, y - 5);
+    ctx.moveTo(x - r - 1, y - r + 2);
+    ctx.lineTo(x + r + 1, y - r + 2);
+    ctx.moveTo(x - 2, y - r);
+    ctx.lineTo(x + 2, y - r);
     ctx.stroke();
     ctx.restore();
   }
