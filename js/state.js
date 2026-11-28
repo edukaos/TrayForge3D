@@ -33,7 +33,7 @@ class AppState {
       activeTab: 'preview',
 
       // Color preview
-      meshColor: 0x0077ff,
+      meshColor: 0xf2c14e,
       wireframe: false,
 
       // Partition tree: Root node
