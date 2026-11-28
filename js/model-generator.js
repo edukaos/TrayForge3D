@@ -29,8 +29,8 @@ class ModelGenerator {
 
     // Material for realistic plastic 3D print
     const material = new THREE.MeshStandardMaterial({
-      color: meshColor || 0x0077ff,
-      roughness: 0.35,
+      color: meshColor || 0xf2c14e,
+      roughness: 0.42,
       metalness: 0.05,
       wireframe: !!wireframe,
       side: THREE.DoubleSide

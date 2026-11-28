@@ -39,5 +39,18 @@ Diseña y personaliza bandejas organizadoras a medida, ajusta compartimentos y e
 
 Al ser una aplicación web estática (Vanilla JS + HTML5 + CSS3 + Three.js), no requiere instalación de dependencias ni compilación.
 
-1. Abre directamente [index.html](file:///d:/Antigravity/TrayForge3D/index.html) en cualquier navegador moderno.
+1. Abre directamente `index.html` en cualquier navegador moderno.
 2. O ejecuta `start.bat` en Windows.
+
+### Three.js
+
+La app usa **three.js r187** empaquetado en `lib/three.bundle.min.js` (incluye `OrbitControls` y expone `window.THREE`), así sigue funcionando sin servidor ni compilación. Para actualizarlo a una versión nueva:
+
+```bash
+npm install three@latest --save-dev
+npm run build:three
+```
+
+### Estilo visual
+
+La interfaz sigue el lenguaje **Liquid Glass** de Qlamps: visor 3D a pantalla completa, barra y panel flotando en vidrio translúcido, fondo navy y acento dorado, con modo oscuro y claro. Todo vive en `style.css` (tokens `--lg-*` al principio del archivo).

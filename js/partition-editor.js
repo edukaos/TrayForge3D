@@ -42,15 +42,15 @@ class PartitionEditor {
   }
 
   resizeCanvas() {
-    const container = document.querySelector('.viewport-container') || document.getElementById('viewport-2d');
+    const container = document.querySelector('.canvas-stage') || document.getElementById('viewport-2d');
     const rect = container ? container.getBoundingClientRect() : null;
     const dpr = window.devicePixelRatio || 1;
 
     const containerW = (rect && rect.width > 50) ? rect.width : (window.innerWidth - 330);
     const containerH = (rect && rect.height > 50) ? rect.height : (window.innerHeight - 56);
 
-    const maxW = Math.max(300, Math.min(containerW - 80, 720));
-    const maxH = Math.max(300, Math.min(containerH - 120, 680));
+    const maxW = Math.max(280, Math.min(containerW - 24, 760));
+    const maxH = Math.max(280, Math.min(containerH - 90, 700)); // deja sitio a la barra de instrucciones
 
     const { width, depth } = this.state.state;
     const aspect = (width || 100) / (depth || 100);
@@ -272,7 +272,7 @@ class PartitionEditor {
     const layout = this.state.computeLayout();
 
     // Calculate scale to fit canvas with padding for measurements
-    const padding = 65;
+    const padding = displayWidth < 440 ? 60 : 80; // espacio para las cotas exteriores
     const availW = displayWidth - padding * 2;
     const availH = displayHeight - padding * 2;
     this.scale = Math.min(availW / width, availH / depth);
@@ -303,16 +303,16 @@ class PartitionEditor {
       }
     }
 
-    const isDark = document.body.classList.contains('theme-dark');
+    const pal = this.palette();
 
     // 1. Draw outer tray body shadow & rounded rect
     ctx.save();
-    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.09)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 8;
+    ctx.shadowColor = pal.trayShadow;
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 10;
 
-    ctx.fillStyle = isDark ? '#1c202a' : '#ffffff';
-    ctx.strokeStyle = isDark ? '#373f50' : '#d7dbe2';
+    ctx.fillStyle = pal.trayFill;
+    ctx.strokeStyle = pal.trayStroke;
     ctx.lineWidth = 1.5;
 
     const rOuter = Math.min(fillet * this.scale, Math.min(trayPixelW, trayPixelH) / 4);
@@ -320,11 +320,13 @@ class PartitionEditor {
     ctx.fill();
     ctx.restore();
 
+    ctx.strokeStyle = pal.trayStroke;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // 2. Draw wall thickness border area (inner cavity background)
     ctx.save();
-    ctx.fillStyle = isDark ? '#13151c' : '#f0f2f6';
+    ctx.fillStyle = pal.innerFill;
     const innerPixelW = layout.innerW * this.scale;
     const innerPixelH = layout.innerH * this.scale;
     const rInner = Math.max(0, rOuter - wallThickness * this.scale);
@@ -348,11 +350,11 @@ class PartitionEditor {
       ctx.save();
       const grad = ctx.createLinearGradient(cx, cy, cx, cy + ch);
       if (isSelected) {
-        grad.addColorStop(0, isDark ? '#232836' : '#ffffff');
-        grad.addColorStop(1, isDark ? '#1c202c' : '#f8fbff');
+        grad.addColorStop(0, pal.cellSelA);
+        grad.addColorStop(1, pal.cellSelB);
       } else {
-        grad.addColorStop(0, isDark ? '#1c202a' : '#fdfdfd');
-        grad.addColorStop(1, isDark ? '#161922' : '#f4f5f8');
+        grad.addColorStop(0, pal.cellA);
+        grad.addColorStop(1, pal.cellB);
       }
 
       ctx.fillStyle = grad;
@@ -361,8 +363,8 @@ class PartitionEditor {
       ctx.fill();
 
       // Subtle inner shadow for 3D depth perception
-      ctx.strokeStyle = isSelected ? '#3b82f6' : (isDark ? '#2c3344' : '#e2e6ed');
-      ctx.lineWidth = isSelected ? 1.5 : 1;
+      ctx.strokeStyle = isSelected ? pal.selStroke : pal.cellStroke;
+      ctx.lineWidth = isSelected ? 2 : 1;
       ctx.stroke();
       ctx.restore();
 
@@ -371,8 +373,8 @@ class PartitionEditor {
         this.renderCellControls(cell, cx, cy, cw, ch);
       } else {
         // Subtle dimension label
-        ctx.fillStyle = isDark ? '#828a9b' : '#9aa1b0';
-        ctx.font = '500 11px system-ui, sans-serif';
+        ctx.fillStyle = pal.cellText;
+        ctx.font = '500 11px system-ui, -apple-system, "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(`Int: ${cell.w.toFixed(1)} × ${cell.h.toFixed(1)} mm`, cx + cw / 2, cy + ch / 2);
@@ -390,8 +392,8 @@ class PartitionEditor {
       const isDivDragging = this.draggingDivider && this.draggingDivider.id === div.id;
 
       ctx.save();
-      ctx.fillStyle = (isDivHovered || isDivDragging) ? '#3b82f6' : (isDark ? '#272c3a' : '#ffffff');
-      ctx.strokeStyle = (isDivHovered || isDivDragging) ? '#60a5fa' : (isDark ? '#3d4557' : '#d2d6df');
+      ctx.fillStyle = (isDivHovered || isDivDragging) ? pal.accent : pal.divFill;
+      ctx.strokeStyle = (isDivHovered || isDivDragging) ? pal.accent : pal.divStroke;
       ctx.lineWidth = (isDivHovered || isDivDragging) ? 2 : 1;
       ctx.fillRect(dx, dy, dw, dh);
       ctx.strokeRect(dx, dy, dw, dh);
@@ -404,15 +406,15 @@ class PartitionEditor {
       ctx.save();
       const pillW = div.dir === 'v' ? 36 : 46;
       const pillH = div.dir === 'v' ? 22 : 18;
-      ctx.fillStyle = (isDivHovered || isDivDragging) ? '#3b82f6' : (isDark ? 'rgba(40, 46, 60, 0.95)' : 'rgba(30, 32, 37, 0.85)');
+      ctx.fillStyle = (isDivHovered || isDivDragging) ? pal.accent : pal.pill;
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = 6;
       this.drawRoundedRect(ctx, midX - pillW / 2, midY - pillH / 2, pillW, pillH, 10);
       ctx.fill();
 
       // Grip icon / arrows
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '700 10px system-ui, sans-serif';
+      ctx.fillStyle = (isDivHovered || isDivDragging) ? pal.onAccent : pal.pillText;
+      ctx.font = '700 10px system-ui, -apple-system, "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.shadowBlur = 0;
@@ -430,6 +432,7 @@ class PartitionEditor {
   // Draw circular split handles (+) like Bento3D
   renderDividerSplitHandles(layout) {
     const { ctx } = this;
+    const pal = this.palette();
     layout.dividers.forEach(div => {
       const dx = this.offsetX + div.x * this.scale;
       const dy = this.offsetY + div.y * this.scale;
@@ -448,13 +451,16 @@ class PartitionEditor {
 
       // Draw circular handle
       ctx.save();
-      ctx.fillStyle = '#1e2025';
+      ctx.fillStyle = pal.handle;
       ctx.beginPath();
       ctx.arc(hx, hy, 11, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = pal.divStroke;
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
       // Plus sign
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = pal.handlePlus;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(hx - 4, hy);
@@ -474,11 +480,11 @@ class PartitionEditor {
     // Dimension badges placed strictly INSIDE the cell to prevent overlapping with neighbors, borders or dividers:
     if (cw >= 130 && ch >= 75) {
       // Spacious cell: separate width badge (top) and height badge (left)
-      this.drawDimBadge(cx + cw / 2, cy + 5, `↔ Int: ${cell.w.toFixed(1)} mm`, 'inside_top', '#2563eb', 'width', cell.id, cell.w);
-      this.drawDimBadge(cx + 6, cy + ch / 2, `↕ Int: ${cell.h.toFixed(1)} mm`, 'inside_left', '#2563eb', 'height', cell.id, cell.h);
+      this.drawDimBadge(cx + cw / 2, cy + 5, `↔ Int: ${cell.w.toFixed(1)} mm`, 'inside_top', null, 'width', cell.id, cell.w);
+      this.drawDimBadge(cx + 6, cy + ch / 2, `↕ Int: ${cell.h.toFixed(1)} mm`, 'inside_left', null, 'height', cell.id, cell.h);
     } else if (cw >= 75 && ch >= 45) {
       // Compact cell: single unified badge centered at top inside
-      this.drawDimBadge(cx + cw / 2, cy + 4, `↔ ${cell.w.toFixed(0)} · ↕ ${cell.h.toFixed(0)} mm`, 'inside_top', '#2563eb', 'both', cell.id, { w: cell.w, h: cell.h });
+      this.drawDimBadge(cx + cw / 2, cy + 4, `↔ ${cell.w.toFixed(0)} · ↕ ${cell.h.toFixed(0)} mm`, 'inside_top', null, 'both', cell.id, { w: cell.w, h: cell.h });
     }
     // Note: If cell is very small (<75px wide or <45px high), we omit the badge inside the canvas to keep
     // the + and trash buttons unobstructed. The sidebar already displays and edits the exact mm.
@@ -506,7 +512,7 @@ class PartitionEditor {
   drawDimBadge(x, y, text, orientation, color, dimension, cellId, val) {
     const { ctx } = this;
     ctx.save();
-    ctx.font = '700 11px system-ui, sans-serif';
+    ctx.font = '700 11px system-ui, -apple-system, "Segoe UI", sans-serif';
     const textWidth = ctx.measureText(text).width;
     const badgeW = textWidth + 16;
     const badgeH = 19;
@@ -542,22 +548,23 @@ class PartitionEditor {
     ctx.shadowBlur = 4;
     ctx.shadowOffsetY = 2;
 
-    ctx.fillStyle = color;
-    this.drawRoundedRect(ctx, bx, by, badgeW, badgeH, 5);
+    const pal = this.palette();
+    ctx.fillStyle = color || pal.accent;
+    this.drawRoundedRect(ctx, bx, by, badgeW, badgeH, 7);
     ctx.fill();
     ctx.restore();
 
     ctx.save();
-    ctx.strokeStyle = '#93c5fd';
+    ctx.strokeStyle = pal.badgeEdge;
     ctx.lineWidth = 1;
-    this.drawRoundedRect(ctx, bx, by, badgeW, badgeH, 5);
+    this.drawRoundedRect(ctx, bx, by, badgeW, badgeH, 7);
     ctx.stroke();
 
     // Arrows and text
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = pal.onAccent;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '700 11px system-ui, sans-serif';
+    ctx.font = '700 11px system-ui, -apple-system, "Segoe UI", sans-serif';
     ctx.fillText(`${text}`, bx + badgeW / 2, by + badgeH / 2);
     ctx.restore();
   }
@@ -571,19 +578,20 @@ class PartitionEditor {
     ctx.shadowBlur = 4;
     ctx.shadowOffsetY = 1.5;
 
-    // High visibility blue plus button
-    ctx.fillStyle = '#2563eb';
+    // High visibility accent plus button
+    const pal = this.palette();
+    ctx.fillStyle = pal.accent;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#ffffff';
+    ctx.strokeStyle = pal.badgeEdge;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // White plus sign
+    // Plus sign
     ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = '#ffffff';
+    ctx.strokeStyle = pal.onAccent;
     ctx.lineWidth = 2.2;
     ctx.beginPath();
     const s = Math.max(3.5, radius * 0.45);
@@ -604,12 +612,12 @@ class PartitionEditor {
     ctx.shadowBlur = 4;
     ctx.shadowOffsetY = 1.5;
 
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = this.palette().danger;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#ffffff';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -630,10 +638,10 @@ class PartitionEditor {
 
   renderOuterDimensions(tx, ty, tw, th, w, d) {
     const { ctx } = this;
-    const isDark = document.body.classList.contains('theme-dark');
+    const pal = this.palette();
     ctx.save();
-    ctx.strokeStyle = isDark ? '#373d4c' : '#c5cbda';
-    ctx.fillStyle = isDark ? '#9aa1b2' : '#646a78';
+    ctx.strokeStyle = pal.dimLine;
+    ctx.fillStyle = pal.dimSub;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 1;
@@ -653,12 +661,12 @@ class PartitionEditor {
     ctx.lineTo(tx + tw, botY + 5);
     ctx.stroke();
 
-    ctx.font = '700 12px system-ui, sans-serif';
-    ctx.fillStyle = isDark ? '#e2e8f0' : '#1e293b';
+    ctx.font = '700 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = pal.dimText;
     ctx.fillText(`Exterior Total: ${w} mm (Ancho)`, tx + tw / 2, botY + 16);
 
-    ctx.font = '500 10.5px system-ui, sans-serif';
-    ctx.fillStyle = isDark ? '#818ca2' : '#64748b';
+    ctx.font = '500 10.5px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = pal.dimSub;
     ctx.fillText(`[Paredes: ${wt} mm c/u · Espacio interior libre total: ${innerW} mm]`, tx + tw / 2, botY + 31);
 
     // Left overall depth
@@ -675,29 +683,45 @@ class PartitionEditor {
     ctx.save();
     ctx.translate(leftX - 16, ty + th / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.font = '700 12px system-ui, sans-serif';
-    ctx.fillStyle = isDark ? '#e2e8f0' : '#1e293b';
+    ctx.font = '700 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = pal.dimText;
     ctx.fillText(`Exterior Total: ${d} mm (Profundidad)`, 0, 0);
 
-    ctx.font = '500 10.5px system-ui, sans-serif';
-    ctx.fillStyle = isDark ? '#818ca2' : '#64748b';
+    ctx.font = '500 10.5px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = pal.dimSub;
     ctx.fillText(`[Espacio interior libre total: ${innerD} mm]`, 0, 15);
     ctx.restore();
 
-    // Top-left Canvas Legend for interior vs exterior clarity
-    ctx.textAlign = 'left';
-    ctx.font = '600 11px system-ui, sans-serif';
-    ctx.fillStyle = isDark ? 'rgba(37, 99, 235, 0.22)' : 'rgba(37, 99, 235, 0.12)';
-    this.drawRoundedRect(ctx, 12, 12, 340, 26, 6);
-    ctx.fill();
-    ctx.strokeStyle = '#3b82f6';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = isDark ? '#93c5fd' : '#1d4ed8';
-    ctx.fillText(`🟦 Azul = Medida INTERIOR libre (para tus objetos)`, 22, 25);
-
     ctx.restore();
+  }
+
+  // Paleta del lienzo 2D (estilo Liquid Glass: navy + acento dorado)
+  palette() {
+    const isDark = document.body.classList.contains('theme-dark');
+    const shared = { accent: '#F5C451', onAccent: '#1A1405', badgeEdge: 'rgba(255,255,255,0.55)' };
+    return isDark ? {
+      ...shared, isDark,
+      trayShadow: 'rgba(0, 0, 0, 0.45)', trayFill: '#14223D', trayStroke: 'rgba(255, 255, 255, 0.14)',
+      innerFill: '#0C172B',
+      cellA: '#17264A', cellB: '#13203D', cellSelA: '#1E3058', cellSelB: '#192A4C',
+      cellStroke: 'rgba(255, 255, 255, 0.08)', selStroke: '#F5C451', cellText: 'rgba(232, 238, 248, 0.62)',
+      divFill: '#24365A', divStroke: 'rgba(255, 255, 255, 0.18)',
+      pill: 'rgba(16, 26, 46, 0.92)', pillText: '#F3F6FB',
+      handle: '#24365A', handlePlus: '#F3F6FB',
+      danger: '#FF6B5E',
+      dimLine: 'rgba(255, 255, 255, 0.22)', dimText: '#F3F6FB', dimSub: 'rgba(232, 238, 248, 0.62)'
+    } : {
+      ...shared, isDark,
+      trayShadow: 'rgba(30, 50, 90, 0.14)', trayFill: '#FFFFFF', trayStroke: 'rgba(11, 20, 36, 0.12)',
+      innerFill: '#EEF2F8',
+      cellA: '#FFFFFF', cellB: '#F6F8FC', cellSelA: '#FFFFFF', cellSelB: '#FFF8E6',
+      cellStroke: 'rgba(11, 20, 36, 0.08)', selStroke: '#D9A21E', cellText: 'rgba(11, 20, 36, 0.55)',
+      divFill: '#DCE3EE', divStroke: 'rgba(11, 20, 36, 0.14)',
+      pill: 'rgba(11, 20, 36, 0.82)', pillText: '#FFFFFF',
+      handle: '#0B1424', handlePlus: '#FFFFFF',
+      danger: '#D93025',
+      dimLine: 'rgba(11, 20, 36, 0.22)', dimText: '#0B1424', dimSub: 'rgba(11, 20, 36, 0.6)'
+    };
   }
 
   drawRoundedRect(ctx, x, y, width, height, radius) {

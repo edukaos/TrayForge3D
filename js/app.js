@@ -8,6 +8,7 @@ class BentoApp {
     this.currentGeometries = [];
     this.currentMeshGroup = null;
 
+    document.documentElement.setAttribute('data-tab', this.state.state.activeTab || 'preview');
     this.initTheme();
     this.init3D();
     this.init2D();
@@ -23,7 +24,8 @@ class BentoApp {
      THEME MANAGEMENT (DARK MODE DEFAULT)
      ======================================================================== */
   initTheme() {
-    const saved = localStorage.getItem('trayforge_theme') || 'dark';
+    let saved = 'dark';
+    try { saved = localStorage.getItem('trayforge_theme') || 'dark'; } catch (e) { /* almacenamiento no disponible */ }
     this.setTheme(saved);
   }
 
@@ -35,11 +37,10 @@ class BentoApp {
       document.body.classList.remove('theme-light');
       document.body.classList.add('theme-dark');
     }
-    localStorage.setItem('trayforge_theme', themeName);
+    document.documentElement.setAttribute('data-theme', themeName);
+    try { localStorage.setItem('trayforge_theme', themeName); } catch (e) { /* almacenamiento no disponible */ }
 
     if (this.scene) {
-      const isDark = themeName === 'dark';
-      this.scene.background.setHex(isDark ? 0x0f1115 : 0xf8fafc);
       if (this.gridHelper) {
         this.scene.remove(this.gridHelper);
       }
@@ -67,17 +68,16 @@ class BentoApp {
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    // Scene
-    const isDark = document.body.classList.contains('theme-dark');
+    // Scene (fondo transparente: se ve el degradado ambiental del CSS detrás)
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(isDark ? 0x0f1115 : 0xf8fafc);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 2000);
     this.camera.position.set(130, 160, 190);
 
     // Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -91,11 +91,14 @@ class BentoApp {
     this.controls.maxPolarAngle = Math.PI / 2 + 0.05; // don't go under bed
     this.controls.target.set(0, 12, 0);
 
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, isDark ? 0.65 : 0.75);
+    // Lights (intensidades físicas de three.js r155+)
+    const hemiLight = new THREE.HemisphereLight(0xf3f6fb, 0x24365a, 1.6);
+    this.scene.add(hemiLight);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
     this.scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2.4);
     dirLight.position.set(100, 250, 150);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
@@ -109,7 +112,7 @@ class BentoApp {
     dirLight.shadow.camera.bottom = -150;
     this.scene.add(dirLight);
 
-    const fillLight = new THREE.DirectionalLight(0xbad4ff, 0.45);
+    const fillLight = new THREE.DirectionalLight(0xbad4ff, 0.9);
     fillLight.position.set(-100, 100, -100);
     this.scene.add(fillLight);
 
@@ -125,13 +128,33 @@ class BentoApp {
     animate();
 
     // Resize Handler
-    window.addEventListener('resize', () => {
+    this.resize3D = () => {
       const w = container.clientWidth;
       const h = container.clientHeight;
       this.camera.aspect = w / h;
-      this.camera.updateProjectionMatrix();
       this.renderer.setSize(w, h);
-    });
+      this.applyStageOffset(w, h);
+    };
+    window.addEventListener('resize', this.resize3D);
+    this.resize3D();
+  }
+
+  // El visor ocupa toda la ventana y el panel flota encima: desplazamos el
+  // centro óptico de la cámara hacia la zona libre para que la bandeja no
+  // quede tapada por el panel ni por la barra superior.
+  applyStageOffset(w, h) {
+    const stage = document.querySelector('.canvas-stage');
+    let dx = 0, dy = 0, zoom = 1;
+    if (stage) {
+      const r = stage.getBoundingClientRect();
+      dx = (r.left + r.width / 2) - w / 2;
+      dy = (r.top + r.height / 2) - h / 2;
+      // Si la zona libre es mucho más pequeña que la ventana (móvil), alejamos la vista.
+      zoom = Math.min(1, Math.min(r.width / w, r.height / h) * 1.5);
+    }
+    this.camera.zoom = zoom;
+    this.camera.setViewOffset(w, h, -dx, -dy, w, h);
+    this.camera.updateProjectionMatrix();
   }
 
   createPrintBedGrid() {
@@ -139,17 +162,21 @@ class BentoApp {
     const bedSize = 260;
     
     // Grid helper with theme-aware colors
-    const colorCenter = isDark ? 0x3b82f6 : 0x2563eb;
-    const colorGrid = isDark ? 0x252a36 : 0xd8dde6;
+    const colorCenter = isDark ? 0x8a6d2c : 0xd9a21e;
+    const colorGrid = isDark ? 0x2a3d60 : 0xc4cfdf;
     this.gridHelper = new THREE.GridHelper(bedSize, 26, colorCenter, colorGrid);
     this.gridHelper.position.y = 0;
+    this.gridHelper.material.transparent = true;
+    this.gridHelper.material.opacity = isDark ? 0.7 : 0.8;
     this.scene.add(this.gridHelper);
 
     // Subtle build plate plane
     const planeGeo = new THREE.PlaneGeometry(bedSize, bedSize);
-    const planeMat = new THREE.MeshBasicMaterial({ 
-      color: isDark ? 0x14171f : 0xfbfdff, 
-      depthWrite: false 
+    const planeMat = new THREE.MeshBasicMaterial({
+      color: isDark ? 0x0c1830 : 0xf4f7fb,
+      transparent: true,
+      opacity: isDark ? 0.55 : 0.7,
+      depthWrite: false
     });
     this.bedPlane = new THREE.Mesh(planeGeo, planeMat);
     this.bedPlane.rotation.x = -Math.PI / 2;
@@ -267,6 +294,15 @@ class BentoApp {
     if (el && document.activeElement !== el) {
       el.value = val;
     }
+    if (el && el.type === 'range') this.paintRange(el);
+  }
+
+  // Pinta la parte recorrida del slider con el color de acento.
+  paintRange(el) {
+    const min = parseFloat(el.min) || 0;
+    const max = parseFloat(el.max) || 100;
+    const pct = ((parseFloat(el.value) - min) / (max - min)) * 100;
+    el.style.setProperty('--fill', `${Math.max(0, Math.min(100, pct))}%`);
   }
 
   bindEvents() {
@@ -545,7 +581,7 @@ class BentoApp {
       this.state.update({ [key]: num }, isFinal);
     };
 
-    slider.addEventListener('input', () => updateVal(slider.value, false));
+    slider.addEventListener('input', () => { updateVal(slider.value, false); this.paintRange(slider); });
     slider.addEventListener('change', () => updateVal(slider.value, true));
     input.addEventListener('change', () => updateVal(input.value, true));
   }
@@ -556,6 +592,7 @@ class BentoApp {
       const btn = document.getElementById(`tab-${t}`);
       if (t === tabName) btn.classList.add('active');
       else btn.classList.remove('active');
+      btn.setAttribute('aria-selected', t === tabName ? 'true' : 'false');
     });
 
     const vp2d = document.getElementById('viewport-2d');
@@ -578,6 +615,7 @@ class BentoApp {
       overlays.classList.add('hidden');
     }
 
+    document.documentElement.setAttribute('data-tab', tabName);
     this.state.update({ activeTab: tabName }, false);
   }
 

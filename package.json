@@ -1,0 +1,12 @@
+{
+  "name": "trayforge3d",
+  "private": true,
+  "description": "Generador paramétrico de bandejas organizadoras para impresión 3D",
+  "scripts": {
+    "build:three": "node tools/build-three.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.187.0"
+  }
+}
